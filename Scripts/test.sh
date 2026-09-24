@@ -62,9 +62,10 @@ if (( report_tiden )); then
     printf 'Tiden run: %s\n' "$run_seq" >&2
 fi
 
+# Bash 3.2 treats an empty array as unbound with set -u.
 "$swift_command" test --disable-xctest --event-stream-version 0 \
     --event-stream-output-path "$stream_path" --xunit-output "$xunit_path" \
-    "${test_args[@]}"
+    ${test_args[@]+"${test_args[@]}"}
 swift_status=$?
 
 if ! python3 "$package_root/Scripts/report_swift_testing.py" \

@@ -1,6 +1,8 @@
 """Schema-faithful Swift Testing ABI v0 fixtures for the Tiden bridge."""
 
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -131,6 +133,43 @@ class SwiftTestingReportTests(unittest.TestCase):
         rows = convert(self.stream, self.root)
         self.assertEqual(rows[0]["fields"]["file_path"],
                          "Tests/JevClientTests/Nested/ModelTests.swift")
+
+    def test_bash_launcher_forwards_zero_or_spaced_arguments_and_keeps_failure(self):
+        fake_swift = self.root / "fake-swift"
+        fake_swift.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "with open(os.environ['FAKE_SWIFT_ARGS'], 'w', encoding='utf-8') as output:\n"
+            "    json.dump(sys.argv[1:], output)\n"
+            "sys.exit(47)\n",
+            encoding="utf-8",
+        )
+        fake_swift.chmod(0o755)
+        launcher = Path(__file__).resolve().parent / "test.sh"
+        for index, forwarded in enumerate(([], ["--filter", "Suite name with spaces"])):
+            with self.subTest(forwarded=forwarded):
+                argv_path = self.root / f"args-{index}.json"
+                environment = os.environ.copy()
+                environment.update({
+                    "SWIFT_COMMAND": str(fake_swift),
+                    "FAKE_SWIFT_ARGS": str(argv_path),
+                    "JEV_TEST_RESULTS_DIR": str(self.root / "run-results"),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                })
+                completed = subprocess.run(
+                    ["/bin/bash", str(launcher), *forwarded],
+                    cwd=self.root, env=environment, capture_output=True, text=True,
+                    timeout=30, check=False,
+                )
+                self.assertTrue(argv_path.is_file(), completed.stderr)
+                argv = json.loads(argv_path.read_text(encoding="utf-8"))
+                self.assertEqual(argv[:4],
+                                 ["test", "--disable-xctest", "--event-stream-version", "0"])
+                self.assertEqual(argv[4], "--event-stream-output-path")
+                self.assertEqual(argv[6], "--xunit-output")
+                self.assertEqual(argv[8:], forwarded)
+                self.assertIn("Swift Testing report rejected:", completed.stderr)
+                self.assertEqual(completed.returncode, 47, completed.stderr)
 
 
 if __name__ == "__main__":
