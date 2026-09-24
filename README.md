@@ -4,23 +4,23 @@ JevClient is a Swift package for TypeSafe AI's [System One API](https://docs.typ
 
 The package requires Swift 6.4 in Swift 6 language mode. Its declared minimums are macOS 12 and iOS 15. Linux uses `FoundationNetworking` where needed. CI is configured for macOS and Linux package tests and an iOS device build. JevClient does not implement streaming, chat, file uploads, or automatic credential storage.
 
-## Add the local package
+## Install
 
-In Xcode, use **File → Add Package Dependencies → Add Local…**, select this repository, and add the `JevClient` library product to your target. For another Swift package, use a local path and product dependency:
+In Xcode, use **File → Add Package Dependencies**, enter `https://github.com/Enapiuz/jev-client-swift`, select the `master` branch, and add the `JevClient` library product to your target. For another Swift package, add the repository and product dependency:
 
 ```swift
 dependencies: [
-    .package(path: "../JevClient"),
+    .package(url: "https://github.com/Enapiuz/jev-client-swift.git", branch: "master"),
 ],
 targets: [
     .target(
         name: "YourApp",
-        dependencies: [.product(name: "JevClient", package: "JevClient")]
+        dependencies: [.product(name: "JevClient", package: "jev-client-swift")]
     ),
 ]
 ```
 
-There is no published package URL or release tag to install yet.
+There is no versioned release tag yet, so use the `master` branch dependency until one is published. For a local clone, replace the dependency with `.package(path: "../jev-client-swift")` and keep the same product declaration. The repository's SwiftPM identity is `jev-client-swift`; the library product and Swift import remain `JevClient`.
 
 ## First request
 
@@ -275,3 +275,5 @@ xcodebuild -scheme JevClient -destination 'generic/platform=iOS' CODE_SIGNING_AL
 The [testing guide](Documentation/Testing.md) explains the Swift Testing runner, its optional Tiden reporting, artifacts, and a direct `swift test` path when Python is unavailable. The [CI workflow](.github/workflows/ci.yml) is configured to run package tests and release builds on Apple and Linux, plus an iOS device build and DocC build on Apple. A configured workflow is separate from a hosted run. The iOS build checks compilation, and these tests use local HTTP fixtures; neither establishes live authenticated TypeSafe API behavior.
 
 API behavior and model availability can change; consult the current [TypeSafe API reference](https://docs.typesafe.ai/api), [model reference](https://docs.typesafe.ai/models), and [System One concepts](https://docs.typesafe.ai/concepts/system-one).
+
+Licensed under the [MIT License](LICENSE).
