@@ -1,0 +1,20 @@
+.gitignore
+  h_71200c7e42d08e 1-8
+Package.swift
+  h_71200c7e42d08e 1-32
+Sources/JevClient/JevClient.swift
+  h_71200c7e42d08e 1-5
+Tests/JevClientTests/JevClientTests.swift
+  h_71200c7e42d08e 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "082ad4d5db27e85c9809b82583536b8776a32b98",
+  "prompts": {},
+  "humans": {
+    "h_71200c7e42d08e": {
+      "author": "Vadim Shashin <git@enapiuz.com>"
+    }
+  }
+}
