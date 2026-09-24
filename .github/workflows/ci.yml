@@ -1,0 +1,114 @@
+name: CI
+
+"on":
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Swift 6.4 on Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Python 3 for test reporting
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3
+
+      - name: Verify Swift toolchain
+        run: |
+          swift --version
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          output = subprocess.check_output(["swift", "--version"], text=True)
+          match = re.search(r"Swift version (\d+)\.(\d+)", output)
+          if match is None or tuple(map(int, match.groups())) < (6, 4):
+              raise SystemExit("Swift 6.4 or newer is required")
+          PY
+
+      - name: Check test report parser fixtures
+        run: python3 -m unittest discover -s Scripts -p 'test_report_swift_testing.py'
+
+      - name: Run package tests
+        run: Scripts/test.sh
+
+      - name: Build release package
+        run: swift build -c release
+
+      - name: Upload Swift Testing results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: swift-tests-linux
+          path: .build/test-results
+          if-no-files-found: warn
+          retention-days: 7
+
+  apple:
+    name: Swift 6.4 and iOS build on Xcode 27
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify Xcode and Swift toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          output = subprocess.check_output(["swift", "--version"], text=True)
+          match = re.search(r"Swift version (\d+)\.(\d+)", output)
+          if match is None or tuple(map(int, match.groups())) < (6, 4):
+              raise SystemExit("Swift 6.4 or newer is required")
+          PY
+
+      - name: Check test report parser fixtures
+        run: python3 -m unittest discover -s Scripts -p 'test_report_swift_testing.py'
+
+      - name: Run package tests
+        run: Scripts/test.sh
+
+      - name: Build release package
+        run: swift build -c release
+
+      - name: Build for generic iOS device
+        run: |
+          xcodebuild \
+            -scheme JevClient \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/.build/ios" \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build documentation for generic iOS device
+        run: |
+          xcodebuild \
+            -scheme JevClient \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/.build/docc" \
+            CODE_SIGNING_ALLOWED=NO docbuild
+
+      - name: Upload Swift Testing results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: swift-tests-apple
+          path: .build/test-results
+          if-no-files-found: warn
+          retention-days: 7
