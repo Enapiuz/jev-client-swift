@@ -1,0 +1,19 @@
+Scripts/test.sh
+  s_3b6dce1af4be38::t_2ac397c687b030 65,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "efbc001695197a4f60553df4373ba3ce35407def",
+  "prompts": {},
+  "sessions": {
+    "s_3b6dce1af4be38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d2cc-5e7f-7672-8c5f-2cf93dcf14ee",
+        "model": "unknown"
+      },
+      "human_author": "Vadim Shashin <git@enapiuz.com>"
+    }
+  }
+}
