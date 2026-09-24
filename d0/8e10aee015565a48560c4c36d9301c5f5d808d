@@ -1,0 +1,19 @@
+README.md
+  s_de3a4c450d83be::t_63e0d5b47e0fc8 7,9,13,18,23,278-279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d08e10aee015565a48560c4c36d9301c5f5d808d",
+  "prompts": {},
+  "sessions": {
+    "s_de3a4c450d83be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d2c7-e9ac-7823-b4fa-a1ebc166768f",
+        "model": "unknown"
+      },
+      "human_author": "Vadim Shashin <git@enapiuz.com>"
+    }
+  }
+}
