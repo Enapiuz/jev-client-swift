@@ -4,7 +4,7 @@ A Swift client for TypeSafe AI's System One decision API and model discovery end
 
 ## Overview
 
-JevClient sends a string or structured JSON state together with named ``Question`` values. Each question requests a constrained ``Answer``: Choice selects one supplied label, Score estimates a position on an ordered rubric, and Noul estimates the probability that a proposition is true. The service is not a chat or text-generation interface.
+JevClient sends a string or structured JSON state together with named ``Question`` values. Each question requests a constrained ``Answer``: Choice selects one supplied label, Score estimates a position on an ordered rubric, and Noul estimates the probability that a proposition is true. Experimental Box finds a single target in an image. The service is not a chat or text-generation interface.
 
 Create a client with a key, then make one or several evaluations:
 
@@ -19,9 +19,67 @@ let probability = result.value.noul
 
 The SDK accepts optional question instructions for wire compatibility. Supply a clear instruction in ordinary use. The question ID is only a correlation key. Criteria descriptions and instructions can be ``JSONValue`` strings or structured JSON. `state` must be a top-level string, object, or array. ``SystemOneRequest/validate()`` checks local inputs before the network call.
 
-For several judgments over the same evidence, use ``JevClient/evaluate(state:questions:model:options:validation:)``. The answer IDs match the question IDs. Decision results expose the resolved `model` and optional token `usage` directly on ``JevResponse``, as well as in the batch ``SystemOneResponse``. Optional usage means unknown when absent; it is not a zero count. Moving model aliases can resolve to different versions over time. ``JevClient/models(options:)`` returns available model metadata.
+For several judgments over the same evidence, use ``JevClient/evaluate(state:questions:model:assets:options:validation:)``. The answer IDs match the question IDs. Decision results expose the resolved `model` and optional token `usage` directly on ``JevResponse``, as well as in the batch ``SystemOneResponse``. Optional usage means unknown when absent; it is not a zero count. Moving model aliases can resolve to different versions over time. ``JevClient/models(options:)`` returns available model metadata.
 
-Single-question methods use the ID `result` and return a ``JevResponse`` holding only that typed answer in `value`. The resolved model, optional usage, and complete response bytes remain available on the wrapper. Use `evaluate` or ``JevClient/systemOne(_:options:validation:)`` when all named answers matter. ``JevClient/choice(state:instructions:choices:descriptions:model:options:)`` converts all cases of a string-backed enum into Choice labels and converts the entire returned distribution to enum keys.
+Single-question methods use the ID `result` and return a ``JevResponse`` holding only that typed answer in `value`. The resolved model, optional usage, and complete response bytes remain available on the wrapper. Use `evaluate` or ``JevClient/systemOne(_:options:validation:)`` when all named answers matter. ``JevClient/choice(state:instructions:choices:descriptions:model:assets:options:)`` converts all cases of a string-backed enum into Choice labels and converts the entire returned distribution to enum keys.
+
+## Experimental images, Box and long context
+
+``ImageAsset`` holds prepared PNG/JPEG bytes and an ``ImageFormat``. Add assets
+to a request using UUID string keys; reference those keys in strings in state,
+instructions or criteria. References also match within longer strings, so short
+keys can collide with ordinary text. Object keys are never substituted. The
+service requires every asset to be used. All single-question helpers also accept
+assets.
+
+```swift
+let reference = UUID().uuidString
+let photo = ImageAsset(data: preparedJPEGData, format: .jpeg)
+let result = try await client.evaluate(
+    state: ["photo": .string(reference)],
+    questions: [
+        "present": .noul(instructions: "Is there a mug in `photo`?"),
+        "mug": .box(instructions: "The mug in `photo`")
+    ],
+    model: .jev1_14_0,
+    assets: [reference: photo],
+    options: .init(experimentalFeatures: .init(images: true))
+)
+let presence = try result.value.noul("present")
+let mug = try result.value.box("mug")
+```
+
+``BoxCoordinates`` holds normalized edges from the image's top-left.
+``BoxAnswer`` preserves these edges and the service's confidence. **Box always
+returns a rectangle, even if the target is absent.** Use the presence probability
+and application-specific thresholds before acting on the geometry. The SDK does
+not infer detection, clamp geometry or prescribe a threshold.
+
+``JevExperimentalFeatures`` sets independent optional `images` and `longContext`
+flags on client configuration and per-call options. Nil inherits the existing
+setting; false explicitly disables it. Header precedence is configuration raw
+headers, configuration typed flags, per-call raw headers, then per-call typed
+flags, with case-insensitive names. Defaults send neither experimental header.
+Assets or Box require effective image opt-in before transport. Long context maps
+to `TypeSafe-Danger-Zone-Long-Context: true` and, as documented on 15 October 2026,
+raises both context limits to 262k on Jev 1.13 and 1.14. It does not raise byte
+limits and may reduce accuracy.
+
+``ImageUploadEncoding/multipart`` is the default with assets. It uploads the JSON
+and raw image file parts. Select ``ImageUploadEncoding/base64JSON`` for a JSON-only
+proxy. Requests without assets retain ordinary JSON. The SDK checks reference
+byte bounds, nonempty/maximum file bytes and final HTTP body size. Image decoding,
+dimensions, upright orientation and processed/expanded size remain service or
+caller responsibilities; the SDK does not transform image files.
+
+Box needs Jev 1.14 and at least one image asset. Pin ``JevModel/jev1_14_0`` or use
+``JevModel/preview`` deliberately: aliases move, and `.latest` still resolves to
+1.13 in the documentation checked on 15 October 2026. Existing calls keep their
+defaults, but exhaustive `Question` and `Answer` switches must handle `.box`.
+See the repository's [experimental guide](../../../docs/experimental-features.md)
+for preparation, limits and compatibility, and the official
+[images](https://docs.typesafe.ai/images), [Box](https://docs.typesafe.ai/primitives/box)
+and [model](https://docs.typesafe.ai/models) references for current service behavior.
 
 ## HTTP behavior
 
@@ -35,7 +93,7 @@ The optional ``JevConfiguration/observer`` receives lifecycle events without bod
 
 ## Validation and errors
 
-``ResponseValidation/standard`` validates decoded answers against the request: IDs and types, labels and rubric indices, finite probabilities, score ranges, and usage counts. ``ResponseValidation/strict(tolerance:)`` also checks distribution mass, Choice winner consistency, Score weighted mean, and the echoed Score rubric. Tolerance must be finite in `0...0.1`. Strict mode can reject ordinary rounding or changed echo text.
+``ResponseValidation/standard`` validates decoded answers against the request: IDs and types, labels and rubric indices, finite probabilities, score ranges, ordered Box edges and confidence, and usage counts. ``ResponseValidation/strict(tolerance:)`` also checks distribution mass, Choice winner consistency, Score weighted mean, and the echoed Score rubric. Tolerance must be finite in `0...0.1`. Strict mode can reject ordinary rounding or changed echo text.
 
 Malformed local input throws ``JevValidationError``. Non-2xx HTTP responses throw ``JevError/http(_:)`` carrying status, headers, request ID, attempts, and raw body. Decoding failures carry a generic sanitized message plus metadata and raw bytes for deliberate inspection; invalid decoded answers throw ``JevError/invalidResponse(reason:metadata:)``. ``JevResponse`` retains status, headers, request ID, attempt count, and raw bytes for successful calls.
 
@@ -50,6 +108,8 @@ The package declares Swift 6.4, Swift 6 language mode, macOS 12, and iOS 15 mini
 - ``JevAuthentication``
 - ``RequestOptions``
 - ``RetryPolicy``
+- ``JevExperimentalFeatures``
+- ``ImageUploadEncoding``
 - ``HTTPTransport``
 - ``URLSessionTransport``
 - ``JevEvent``
@@ -61,11 +121,15 @@ The package declares Swift 6.4, Swift 6 language mode, macOS 12, and iOS 15 mini
 - ``SystemOneRequest``
 - ``Question``
 - ``NoulCriteria``
+- ``ImageAsset``
+- ``ImageFormat``
 - ``SystemOneResponse``
 - ``Answer``
 - ``ChoiceAnswer``
 - ``ScoreAnswer``
 - ``NoulAnswer``
+- ``BoxAnswer``
+- ``BoxCoordinates``
 - ``TypedChoiceAnswer``
 - ``Usage``
 - ``ModelCard``

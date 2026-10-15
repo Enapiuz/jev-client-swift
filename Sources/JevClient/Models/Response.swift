@@ -54,22 +54,50 @@ public struct NoulAnswer: Codable, Sendable, Equatable {
     public init(noul: Double) { self.noul = noul }
 }
 
+/// Normalized image coordinates, with the origin at the upper left.
+public struct BoxCoordinates: Codable, Sendable, Equatable {
+    public var top: Double
+    public var bottom: Double
+    public var left: Double
+    public var right: Double
+
+    public init(top: Double, bottom: Double, left: Double, right: Double) {
+        self.top = top
+        self.bottom = bottom
+        self.left = left
+        self.right = right
+    }
+}
+
+/// A located region and the service's confidence in that result.
+public struct BoxAnswer: Codable, Sendable, Equatable {
+    public var box: BoxCoordinates
+    public var confidence: Double
+
+    public init(box: BoxCoordinates, confidence: Double) {
+        self.box = box
+        self.confidence = confidence
+    }
+}
+
 /// A flat wire answer with a required `type` discriminator.
 public enum Answer: Codable, Sendable, Equatable {
     case choice(ChoiceAnswer)
     case score(ScoreAnswer)
     case noul(NoulAnswer)
+    case box(BoxAnswer)
 
     public var type: String {
         switch self {
         case .choice: "choice"
         case .score: "score"
         case .noul: "noul"
+        case .box: "box"
         }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, choice, score, noul, legend, probabilities, confidence
+        case type, choice, score, noul, box, legend, probabilities, confidence
     }
 
     public init(from decoder: Decoder) throws {
@@ -87,6 +115,11 @@ public enum Answer: Codable, Sendable, Equatable {
                 score: try container.decode(Double.self, forKey: .score),
                 legend: try container.decode([String: JSONValue].self, forKey: .legend),
                 probabilities: try container.decode([String: Double].self, forKey: .probabilities),
+                confidence: try container.decode(Double.self, forKey: .confidence)
+            ))
+        case "box":
+            self = .box(BoxAnswer(
+                box: try container.decode(BoxCoordinates.self, forKey: .box),
                 confidence: try container.decode(Double.self, forKey: .confidence)
             ))
         case "noul":
@@ -110,6 +143,9 @@ public enum Answer: Codable, Sendable, Equatable {
             try container.encode(answer.score, forKey: .score)
             try container.encode(answer.legend, forKey: .legend)
             try container.encode(answer.probabilities, forKey: .probabilities)
+            try container.encode(answer.confidence, forKey: .confidence)
+        case .box(let answer):
+            try container.encode(answer.box, forKey: .box)
             try container.encode(answer.confidence, forKey: .confidence)
         case .noul(let answer):
             try container.encode(answer.noul, forKey: .noul)
@@ -184,6 +220,16 @@ public struct SystemOneResponse: Codable, Sendable, Equatable {
         return value
     }
 
+    public func box(_ id: String) throws -> BoxAnswer {
+        guard let answer = answers[id] else {
+            throw JevValidationError(path: "answers.\(id)", message: "Missing answer")
+        }
+        guard case .box(let value) = answer else {
+            throw JevValidationError(path: "answers.\(id)", message: "Expected a Box answer")
+        }
+        return value
+    }
+
     /// Validates the response against its original request. Unknown additive JSON fields are ignored during decoding.
     public func validate(
         for request: SystemOneRequest,
@@ -221,6 +267,17 @@ public struct SystemOneResponse: Codable, Sendable, Equatable {
                 try Self.validateChoice(answer, labels: Set(criteria.keys), path: path, policy: policy)
             case (.score(_, let criteria), .score(let answer)):
                 try Self.validateScore(answer, rubric: criteria, path: path, policy: policy)
+            case (.box, .box(let answer)):
+                try Self.validateProbability(answer.confidence, path: "\(path).confidence")
+                for (name, value) in [
+                    ("top", answer.box.top), ("bottom", answer.box.bottom),
+                    ("left", answer.box.left), ("right", answer.box.right)
+                ] {
+                    try Self.validateProbability(value, path: "\(path).box.\(name)")
+                }
+                guard answer.box.left < answer.box.right, answer.box.top < answer.box.bottom else {
+                    throw JevValidationError(path: "\(path).box", message: "Box edges must define a positive area")
+                }
             case (.noul, .noul(let answer)):
                 try Self.validateProbability(answer.noul, path: "\(path).noul")
             default:

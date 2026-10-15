@@ -50,11 +50,16 @@ public struct JevClient: Sendable {
         try Self.validate(policy)
         try Task.checkCancellation()
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let body = try encoder.encode(request)
+        try options.validate()
+        let headers = configuration.resolvedHeaders(options: options, evaluation: true)
+        if !request.assets.isEmpty,
+           headers["typesafe-danger-zone-images"]?.trimmingCharacters(in: .whitespaces).lowercased() != "true" {
+            throw JevValidationError(path: "experimentalFeatures.images", message: "Image evaluations require an explicit Images opt-in")
+        }
+        let encoded = try request.encodedBody(using: options.imageUploadEncoding ?? configuration.imageUploadEncoding)
         let (response, metadata) = try await executor.execute(
-            method: "POST", path: "/v1/systemone", body: body, options: options
+            method: "POST", path: "/v1/systemone", body: encoded.body,
+            options: options, contentType: encoded.contentType
         )
         let decoded: SystemOneResponse
         do {
@@ -84,12 +89,13 @@ public struct JevClient: Sendable {
         state: JSONValue,
         questions: [String: Question],
         model: JevModel? = nil,
+        assets: [String: ImageAsset] = [:],
         options: RequestOptions = .init(),
         validation: ResponseValidation? = nil
     ) async throws -> JevResponse<SystemOneResponse> {
         try await systemOne(
             SystemOneRequest(
-                state: state, model: model ?? configuration.model, questions: questions
+                state: state, model: model ?? configuration.model, questions: questions, assets: assets
             ),
             options: options, validation: validation
         )
@@ -130,12 +136,13 @@ public struct JevClient: Sendable {
         instructions: JSONValue? = nil,
         criteria: [String: JSONValue],
         model: JevModel? = nil,
+        assets: [String: ImageAsset] = [:],
         options: RequestOptions = .init()
     ) async throws -> JevResponse<ChoiceAnswer> {
         let response = try await evaluate(
             state: state,
             questions: ["result": .choice(instructions: instructions, criteria: criteria)],
-            model: model, options: options
+            model: model, assets: assets, options: options
         )
         guard case .choice(let answer)? = response.value.answers["result"] else {
             throw JevError.invalidResponse(
@@ -151,12 +158,13 @@ public struct JevClient: Sendable {
         instructions: JSONValue? = nil,
         criteria: [JSONValue],
         model: JevModel? = nil,
+        assets: [String: ImageAsset] = [:],
         options: RequestOptions = .init()
     ) async throws -> JevResponse<ScoreAnswer> {
         let response = try await evaluate(
             state: state,
             questions: ["result": .score(instructions: instructions, criteria: criteria)],
-            model: model, options: options
+            model: model, assets: assets, options: options
         )
         guard case .score(let answer)? = response.value.answers["result"] else {
             throw JevError.invalidResponse(
@@ -172,18 +180,35 @@ public struct JevClient: Sendable {
         instructions: JSONValue? = nil,
         criteria: NoulCriteria? = nil,
         model: JevModel? = nil,
+        assets: [String: ImageAsset] = [:],
         options: RequestOptions = .init()
     ) async throws -> JevResponse<NoulAnswer> {
         let response = try await evaluate(
             state: state,
             questions: ["result": .noul(instructions: instructions, criteria: criteria)],
-            model: model, options: options
+            model: model, assets: assets, options: options
         )
         guard case .noul(let answer)? = response.value.answers["result"] else {
             throw JevError.invalidResponse(
                 reason: "answers.result: Expected a Noul answer", metadata: response.metadata
             )
         }
+        return response.map { _ in answer }
+    }
+
+    /// Locates one image region with a question named `result`.
+    @concurrent public func box(
+        state: JSONValue,
+        instructions: JSONValue,
+        model: JevModel? = nil,
+        assets: [String: ImageAsset] = [:],
+        options: RequestOptions = .init()
+    ) async throws -> JevResponse<BoxAnswer> {
+        let response = try await evaluate(
+            state: state, questions: ["result": .box(instructions: instructions)],
+            model: model, assets: assets, options: options
+        )
+        let answer = try response.value.box("result")
         return response.map { _ in answer }
     }
 
@@ -195,6 +220,7 @@ public struct JevClient: Sendable {
         choices: C.Type,
         descriptions: [C: JSONValue] = [:],
         model: JevModel? = nil,
+        assets: [String: ImageAsset] = [:],
         options: RequestOptions = .init()
     ) async throws -> JevResponse<TypedChoiceAnswer<C>> where C.RawValue == String {
         let cases = Array(C.allCases)
@@ -215,7 +241,7 @@ public struct JevClient: Sendable {
         }
         let response = try await choice(
             state: state, instructions: instructions, criteria: criteria,
-            model: model, options: options
+            model: model, assets: assets, options: options
         )
         guard let winner = labelToChoice[response.value.choice] else {
             throw JevError.invalidResponse(

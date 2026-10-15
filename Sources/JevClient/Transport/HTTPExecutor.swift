@@ -25,10 +25,15 @@ internal struct HTTPExecutor: Sendable {
         method: String,
         path: String,
         body: Data?,
-        options: RequestOptions
+        options: RequestOptions,
+        contentType: String = "application/json"
     ) async throws -> (HTTPResponse, ResponseMetadata) {
         try configuration.validate()
         try options.validate()
+        guard contentType.utf8.count <= 256,
+              contentType.utf8.allSatisfy({ $0 >= 32 && $0 < 127 }) else {
+            throw JevError.configuration("Invalid encoded content type")
+        }
         guard path.hasPrefix("/"), !path.hasPrefix("//"),
               !path.contains("?"), !path.contains("#"),
               !path.utf8.contains(13), !path.utf8.contains(10) else {
@@ -49,7 +54,8 @@ internal struct HTTPExecutor: Sendable {
                         path: path,
                         body: body,
                         options: options,
-                        policy: policy
+                        policy: policy,
+                        contentType: contentType
                     )
                 }
                 group.addTask {
@@ -75,7 +81,8 @@ internal struct HTTPExecutor: Sendable {
             path: path,
             body: body,
             options: options,
-            policy: policy
+            policy: policy,
+            contentType: contentType
         )
     }
 
@@ -84,7 +91,8 @@ internal struct HTTPExecutor: Sendable {
         path: String,
         body: Data?,
         options: RequestOptions,
-        policy: RetryPolicy
+        policy: RetryPolicy,
+        contentType: String
     ) async throws -> (HTTPResponse, ResponseMetadata) {
         let perAttemptTimeout = options.requestTimeout ?? configuration.requestTimeout
         for attempt in 1...(policy.maxRetries + 1) {
@@ -98,7 +106,8 @@ internal struct HTTPExecutor: Sendable {
                     path: path,
                     body: body,
                     options: options,
-                    timeout: perAttemptTimeout
+                    timeout: perAttemptTimeout,
+                    contentType: contentType
                 )
             } catch {
                 configuration.observer?(.requestFailed(attempt: attempt, kind: "authentication"))
@@ -167,7 +176,8 @@ internal struct HTTPExecutor: Sendable {
         path: String,
         body: Data?,
         options: RequestOptions,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        contentType: String
     ) async throws -> URLRequest {
         guard var components = URLComponents(url: configuration.baseURL, resolvingAgainstBaseURL: false) else {
             throw JevError.configuration("Invalid baseURL")
@@ -183,19 +193,13 @@ internal struct HTTPExecutor: Sendable {
         request.httpMethod = method
         request.httpBody = body
 
-        var headers: [String: String] = [:]
-        for (name, value) in configuration.headers {
-            setHeader(name, value: value, in: &headers)
-        }
-        for (name, value) in options.headers {
-            setHeader(name, value: value, in: &headers)
-        }
+        var headers = configuration.resolvedHeaders(options: options, evaluation: path == "/v1/systemone")
         // Protocol-owned values win regardless of caller header casing.
         setHeader("Accept", value: "application/json", in: &headers)
         setHeader("User-Agent", value: "JevClient/0.1.0", in: &headers)
         removeHeader("Content-Type", from: &headers)
         if body != nil {
-            setHeader("Content-Type", value: "application/json", in: &headers)
+            setHeader("Content-Type", value: contentType, in: &headers)
         }
         switch configuration.authentication {
         case .none:

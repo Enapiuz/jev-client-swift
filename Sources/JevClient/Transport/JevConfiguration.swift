@@ -60,11 +60,24 @@ public struct RetryPolicy: Sendable, Equatable {
     }
 }
 
+/// Explicit overrides for experimental evaluation capabilities. Nil leaves a header unchanged.
+public struct JevExperimentalFeatures: Sendable, Equatable {
+    public var images: Bool?
+    public var longContext: Bool?
+
+    public init(images: Bool? = nil, longContext: Bool? = nil) {
+        self.images = images
+        self.longContext = longContext
+    }
+}
+
 public struct JevConfiguration: Sendable {
     public var authentication: JevAuthentication
     public var baseURL: URL
     public var model: JevModel
     public var headers: [String: String]
+    public var experimentalFeatures: JevExperimentalFeatures
+    public var imageUploadEncoding: ImageUploadEncoding
     /// Per-attempt URLRequest timeout, in seconds.
     public var requestTimeout: TimeInterval
     /// Full operation timeout, including token providers and retry delays. Set nil to disable.
@@ -78,6 +91,8 @@ public struct JevConfiguration: Sendable {
         baseURL: URL = URL(string: "https://api.typesafe.ai")!,
         model: JevModel = .latest,
         headers: [String: String] = [:],
+        experimentalFeatures: JevExperimentalFeatures = .init(),
+        imageUploadEncoding: ImageUploadEncoding = .multipart,
         requestTimeout: TimeInterval = 30,
         totalTimeout: TimeInterval? = 90,
         retryPolicy: RetryPolicy = .default,
@@ -87,6 +102,8 @@ public struct JevConfiguration: Sendable {
         self.baseURL = baseURL
         self.model = model
         self.headers = headers
+        self.experimentalFeatures = experimentalFeatures
+        self.imageUploadEncoding = imageUploadEncoding
         self.requestTimeout = requestTimeout
         self.totalTimeout = totalTimeout
         self.retryPolicy = retryPolicy
@@ -113,6 +130,8 @@ public struct JevConfiguration: Sendable {
 
 public struct RequestOptions: Sendable {
     public var headers: [String: String]
+    public var experimentalFeatures: JevExperimentalFeatures
+    public var imageUploadEncoding: ImageUploadEncoding?
     public var requestTimeout: TimeInterval?
     public var totalTimeout: TimeInterval?
     public var retryPolicy: RetryPolicy?
@@ -120,11 +139,15 @@ public struct RequestOptions: Sendable {
     /// Nil values inherit configuration; disable the overall deadline on the configuration.
     public init(
         headers: [String: String] = [:],
+        experimentalFeatures: JevExperimentalFeatures = .init(),
+        imageUploadEncoding: ImageUploadEncoding? = nil,
         requestTimeout: TimeInterval? = nil,
         totalTimeout: TimeInterval? = nil,
         retryPolicy: RetryPolicy? = nil
     ) {
         self.headers = headers
+        self.experimentalFeatures = experimentalFeatures
+        self.imageUploadEncoding = imageUploadEncoding
         self.requestTimeout = requestTimeout
         self.totalTimeout = totalTimeout
         self.retryPolicy = retryPolicy
@@ -166,5 +189,24 @@ private func validateHeaders(_ headers: [String: String]) throws {
         guard value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }) else {
             throw JevError.configuration("HTTP header values cannot contain control characters")
         }
+    }
+}
+
+// Shared by local opt-in validation and the executor, so effective flags cannot diverge.
+extension JevConfiguration {
+    func resolvedHeaders(options: RequestOptions, evaluation: Bool) -> [String: String] {
+        var result: [String: String] = [:]
+        func merge(_ headers: [String: String]) {
+            for (name, value) in headers { result[name.lowercased()] = value }
+        }
+        func apply(_ flags: JevExperimentalFeatures) {
+            if let images = flags.images { result["typesafe-danger-zone-images"] = String(images) }
+            if let longContext = flags.longContext { result["typesafe-danger-zone-long-context"] = String(longContext) }
+        }
+        merge(headers)
+        if evaluation { apply(experimentalFeatures) }
+        merge(options.headers)
+        if evaluation { apply(options.experimentalFeatures) }
+        return result
     }
 }

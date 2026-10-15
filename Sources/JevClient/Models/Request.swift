@@ -7,6 +7,9 @@ public struct JevModel: RawRepresentable, ExpressibleByStringLiteral, Codable, S
     public init(rawValue: String) { self.rawValue = rawValue }
     public init(stringLiteral value: String) { self.rawValue = value }
 
+    public static let jev1_13_0: JevModel = "jev-1.13.0"
+    public static let jev1_14_0: JevModel = "jev-1.14.0"
+
     public static let latest: JevModel = "jev-latest"
     public static let preview: JevModel = "jev-preview"
 
@@ -73,6 +76,7 @@ public struct NoulCriteria: Codable, Sendable, Equatable {
 public enum Question: Codable, Sendable, Equatable {
     case choice(instructions: JSONValue? = nil, criteria: [String: JSONValue])
     case score(instructions: JSONValue? = nil, criteria: [JSONValue])
+    case box(instructions: JSONValue)
     case noul(instructions: JSONValue? = nil, criteria: NoulCriteria? = nil)
 
     public var type: String {
@@ -80,6 +84,7 @@ public enum Question: Codable, Sendable, Equatable {
         case .choice: "choice"
         case .score: "score"
         case .noul: "noul"
+        case .box: "box"
         }
     }
 
@@ -105,6 +110,8 @@ public enum Question: Codable, Sendable, Equatable {
                 instructions: instructions,
                 criteria: try container.decode([JSONValue].self, forKey: .criteria)
             )
+        case "box":
+            self = .box(instructions: try container.decode(JSONValue.self, forKey: .instructions))
         case "noul":
             self = .noul(
                 instructions: instructions,
@@ -127,6 +134,8 @@ public enum Question: Codable, Sendable, Equatable {
         case .score(let instructions, let criteria):
             try container.encodeIfPresent(instructions, forKey: .instructions)
             try container.encode(criteria, forKey: .criteria)
+        case .box(let instructions):
+            try container.encode(instructions, forKey: .instructions)
         case .noul(let instructions, let criteria):
             try container.encodeIfPresent(instructions, forKey: .instructions)
             try container.encodeIfPresent(criteria, forKey: .criteria)
@@ -138,6 +147,8 @@ public enum Question: Codable, Sendable, Equatable {
         let instructions: JSONValue?
         switch self {
         case .choice(let value, _), .score(let value, _), .noul(let value, _):
+            instructions = value
+        case .box(let value):
             instructions = value
         }
         try instructions?.validateContent(at: "\(path).instructions", allowsNull: true)
@@ -160,6 +171,8 @@ public enum Question: Codable, Sendable, Equatable {
             for (index, value) in criteria.enumerated() {
                 try value.validateContent(at: "\(path).criteria[\(index)]", allowsNull: false)
             }
+        case .box(let instructions):
+            try instructions.validateContent(at: "\(path).instructions", allowsNull: false)
         case .noul(_, let criteria):
             try criteria?.trueDescription?.validateContent(at: "\(path).criteria.true", allowsNull: true)
             try criteria?.falseDescription?.validateContent(at: "\(path).criteria.false", allowsNull: true)
@@ -172,11 +185,31 @@ public struct SystemOneRequest: Codable, Sendable, Equatable {
     public var state: JSONValue
     public var model: JevModel
     public var questions: [String: Question]
+    public var assets: [String: ImageAsset]
 
-    public init(state: JSONValue, model: JevModel = .latest, questions: [String: Question]) {
+    public init(state: JSONValue, model: JevModel = .latest, questions: [String: Question], assets: [String: ImageAsset] = [:]) {
         self.state = state
         self.model = model
         self.questions = questions
+        self.assets = assets
+    }
+
+    private enum CodingKeys: String, CodingKey { case state, model, questions, assets }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        state = try container.decode(JSONValue.self, forKey: .state)
+        model = try container.decode(JevModel.self, forKey: .model)
+        questions = try container.decode([String: Question].self, forKey: .questions)
+        assets = try container.decodeIfPresent([String: ImageAsset].self, forKey: .assets) ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(state, forKey: .state)
+        try container.encode(model, forKey: .model)
+        try container.encode(questions, forKey: .questions)
+        if !assets.isEmpty { try container.encode(assets, forKey: .assets) }
     }
 
     /// Rejects invalid portable state, empty model/IDs, malformed criteria, and nonfinite numbers.
@@ -187,6 +220,32 @@ public struct SystemOneRequest: Codable, Sendable, Equatable {
         }
         guard !questions.isEmpty else {
             throw JevValidationError(path: "questions", message: "At least one question is required")
+        }
+        var referenceBytes = 0
+        for (reference, asset) in assets {
+            let count = reference.utf8.count
+            guard !reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  count <= 1_024 else {
+                throw JevValidationError(path: "assets", message: "Image references must be nonblank and at most 1024 UTF-8 bytes")
+            }
+            referenceBytes += count
+            guard referenceBytes <= 65_536 else {
+                throw JevValidationError(path: "assets", message: "Image references exceed 65536 UTF-8 bytes in total")
+            }
+            guard !asset.data.isEmpty, asset.data.count <= 16 * 1_024 * 1_024 else {
+                throw JevValidationError(path: "assets", message: "Each image must contain 1...16777216 bytes")
+            }
+            guard state.containsAssetReference(reference) || questions.values.contains(where: { $0.containsAssetReference(reference) }) else {
+                throw JevValidationError(path: "assets", message: "An image asset is not referenced by a string value")
+            }
+        }
+        if questions.values.contains(where: { if case .box = $0 { true } else { false } }) {
+            guard !assets.isEmpty else {
+                throw JevValidationError(path: "assets", message: "Box requires image assets")
+            }
+            guard model != .jev1_13_0 else {
+                throw JevValidationError(path: "model", message: "Box is unavailable with jev-1.13.0")
+            }
         }
         for id in questions.keys.sorted() {
             guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

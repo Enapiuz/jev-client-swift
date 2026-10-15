@@ -1,8 +1,8 @@
 # JevClient
 
-JevClient is a Swift package for TypeSafe AI's [System One API](https://docs.typesafe.ai/api). It sends evidence as a `state` value and named questions, then returns constrained Choice, Score, or Noul answers. It also lists available models. The package has no third-party dependencies and imports no UI framework.
+JevClient is a Swift package for TypeSafe AI's [System One API](https://docs.typesafe.ai/api). It sends evidence as a `state` value and named questions, then returns constrained Choice, Score, or Noul answers. It also supports experimental images and Box answers, and lists available models. The package has no third-party dependencies and imports no UI framework.
 
-The package requires Swift 6.4 in Swift 6 language mode. Its declared minimums are macOS 12 and iOS 15. Linux uses `FoundationNetworking` where needed. CI is configured for macOS and Linux package tests and an iOS device build. JevClient does not implement streaming, chat, file uploads, or automatic credential storage.
+The package requires Swift 6.4 in Swift 6 language mode. Its declared minimums are macOS 12 and iOS 15. Linux uses `FoundationNetworking` where needed. CI is configured for macOS and Linux package tests and an iOS device build. JevClient does not implement streaming, chat, or automatic credential storage.
 
 ## Install
 
@@ -92,6 +92,54 @@ print(result.model as Any, result.usage?.inputTokens as Any)
 ```
 
 `JevResponse.model` and `JevResponse.usage` are available for batched and single-question decisions. `usage` and each token count are optional: missing usage means unknown, not zero. The returned model identifies the resolved service model, which can differ from a moving alias such as `.latest`. The full batch envelope is also in `result.value`. Model discovery uses `try await client.models()` and returns `[ModelCard]`; a model ID can be valid even when absent from the alias list. See [models](https://docs.typesafe.ai/models).
+
+## Jev 1.14, images, and Box
+
+You can pin the service model with `.jev1_14_0` or `.jev1_13_0`, use `.preview` or `.latest`, or supply a custom model ID. As documented on 15 October 2026, `.preview` resolves to 1.14 and `.latest` to 1.13; aliases can move. The SDK keeps `.latest` as its default. See [current models](https://docs.typesafe.ai/models).
+
+Images and Box are experimental and require an explicit image opt-in. Images work with both versions; Box needs 1.14. Prepare PNG/JPEG bytes before calling the SDK. This function sends one image and asks both whether a mug exists and where it is:
+
+```swift
+func inspectPhoto(
+    _ photoData: Data,
+    client: JevClient
+) async throws -> (presence: NoulAnswer, location: BoxAnswer) {
+    let reference = UUID().uuidString
+    let photo = ImageAsset(data: photoData, format: .jpeg)
+    let result = try await client.evaluate(
+        state: ["photo": .string(reference)],
+        questions: [
+            "present": .noul(instructions: "Is there a coffee mug in `photo`?"),
+            "location": .box(instructions: "The coffee mug in `photo`")
+        ],
+        model: .jev1_14_0,
+        assets: [reference: photo],
+        options: RequestOptions(
+            experimentalFeatures: .init(images: true)
+        )
+    )
+    return (
+        presence: try result.value.noul("present"),
+        location: try result.value.box("location")
+    )
+}
+```
+
+**Box always returns one box, even when the target is absent.** Use the presence probability and application-specific thresholds before acting on its geometry. `BoxAnswer.box` holds normalized `top`, `bottom`, `left`, and `right` edges, measured from the image's top-left; `confidence` is separate. The SDK validates finite, ordered coordinates in `0...1` without inferring detection. Use `client.box(state:instructions:model:assets:options:)` for a single Box question.
+
+Assets can be referenced in state, instructions, or criteria for any question type, including the existing single-question and typed Choice helpers. References are replaced inside ordinary string values too: use UUIDs to avoid accidental matches. Each asset must be used, and object keys do not count as references. Multipart is the default upload format. For a proxy that needs JSON, set `imageUploadEncoding: .base64JSON` in `RequestOptions` or `JevConfiguration`; base64 increases the body size.
+
+Long context is independently opt-in, with or without images:
+
+```swift
+let longDocumentOptions = RequestOptions(
+    experimentalFeatures: .init(longContext: true)
+)
+```
+
+The documented long-context limits are 262k tokens per request and per question on both model versions. This mode is slower and less accurate; it does not raise image or HTTP byte limits. Client-wide experimental defaults can be set through `JevConfiguration.experimentalFeatures`. Each typed flag is optional: nil inherits existing settings, while false explicitly disables it. Per-call settings override client settings. Raw headers remain supported; see [precedence, preparation, limits, and compatibility](docs/experimental-features.md).
+
+Existing calls retain their defaults. Consumers with exhaustive switches over `Question` or `Answer` must handle the new `.box` case. These tests verify SDK behavior, not live model quality. See TypeSafe's [image documentation](https://docs.typesafe.ai/images) and [Box contract](https://docs.typesafe.ai/primitives/box).
 
 ## Typed Choice and structured state
 
@@ -237,7 +285,7 @@ To reuse an existing session, provide your own `HTTPTransport` implementation. A
 
 ## Validation and errors
 
-`.standard` response validation checks structure against the request: answer IDs and kinds, Choice labels, Score indices, finite in-range probabilities and scores, and optional usage counts. `.strict(tolerance:)` additionally checks probability mass, the Choice winner, the Score weighted mean, and the echoed Score legend. The tolerance must be finite and within `0...0.1`. Strict checking can reject rounded distributions or changed echo text that standard validation accepts. Request validation is always enabled.
+`.standard` response validation checks structure against the request: answer IDs and kinds, Choice labels, Score indices, finite in-range probabilities and scores, Box edge ordering/ranges and confidence, and optional usage counts. `.strict(tolerance:)` additionally checks probability mass, the Choice winner, the Score weighted mean, and the echoed Score legend. The tolerance must be finite and within `0...0.1`. Strict checking can reject rounded distributions or changed echo text that standard validation accepts. Request validation is always enabled. Images and Box also require explicit image opt-in before transport; asset and wire-size checks are described in the [experimental guide](docs/experimental-features.md).
 
 Every `JevResponse` includes `metadata` (`statusCode`, headers, request ID, attempt count) and the raw response `body`. Decision results also expose the resolved `model` and optional `usage`, including single-question helpers. Single-question helpers return only the selected answer in `value`; use `evaluate` or `systemOne` to access all named answers in the full envelope. Non-2xx responses throw `JevError.http` with status, headers, request ID, attempts, and raw body. Decoding failures have a sanitized message and retain bytes for deliberate inspection. Avoid logging state, credentials, headers, or response bodies by default; even a request ID may be sensitive in some systems. The observer emits lifecycle events without request or response bodies.
 
@@ -272,7 +320,7 @@ For an iOS compile check on macOS with Xcode and an iOS SDK:
 xcodebuild -scheme JevClient -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
-The [testing guide](Documentation/Testing.md) explains the Swift Testing runner, its optional Tiden reporting, artifacts, and a direct `swift test` path when Python is unavailable. The [CI workflow](.github/workflows/ci.yml) is configured to run package tests and release builds on Apple and Linux, plus an iOS device build and DocC build on Apple. A configured workflow is separate from a hosted run. The iOS build checks compilation, and these tests use local HTTP fixtures; neither establishes live authenticated TypeSafe API behavior.
+The [testing guide](Documentation/Testing.md) explains the Swift Testing runner, local artifacts, platform checks, and a direct `swift test` path when Python is unavailable. The [CI workflow](.github/workflows/ci.yml) is configured to run package tests and release builds on Apple and Linux, plus an iOS device build and DocC build on Apple. A configured workflow is separate from a hosted run. The iOS build checks compilation, and these tests use local HTTP fixtures; neither establishes live authenticated TypeSafe API behavior.
 
 API behavior and model availability can change; consult the current [TypeSafe API reference](https://docs.typesafe.ai/api), [model reference](https://docs.typesafe.ai/models), and [System One concepts](https://docs.typesafe.ai/concepts/system-one).
 
