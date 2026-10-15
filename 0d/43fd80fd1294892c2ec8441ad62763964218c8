@@ -1,0 +1,45 @@
+Tests/JevClientTests/ImageExperimentalTests.swift
+  s_f619510890cb71::t_af6381fa80ed15 1-315,327,335,345,349,364,376-377,379-381,392,399-401,406,409,415,422,427-429
+  s_f619510890cb71::t_eb0e10571b1b58 316-326,328-334,336-344,346-348,350-363,365-375,378,382-391,393-398,402-405,407-408,410-414,416-421,423-426
+AGENTS.md
+  s_f619510890cb71::t_7739c4fef5e38d 1-25
+Sources/JevClient/Models/Images.swift
+  s_f619510890cb71::t_cea4dfe528f0f3 1-74
+Sources/JevClient/Models/Response.swift
+  s_f619510890cb71::t_42693174442831 57-82,88,95,100,120-124,147-149,223-232,270-280
+Sources/JevClient/Transport/ImageRequestEncoding.swift
+  s_f619510890cb71::t_053673b158493f 1-57
+Sources/JevClient/Models/Request.swift
+  s_f619510890cb71::t_cea4dfe528f0f3 10-12,79,87,113-114,137-138,151-152,174-175,188,190,194-212,224-249
+docs/experimental-features.md
+  s_f619510890cb71::t_48892d4887e12e 1-133
+Documentation/Testing.md
+  s_f619510890cb71::t_ecf049c1b885a2 31-43
+  s_f619510890cb71::t_ae1ea6d8f67145 1,6-7,10-16,19-28,44-68,70-74,92-94
+Sources/JevClient/Transport/JevConfiguration.swift
+  s_f619510890cb71::t_42693174442831 63-73,79-80,94-95,105-106,133-134,142-143,149-150,194-212
+README.md
+  s_f619510890cb71::t_ae1ea6d8f67145 3,5,96-143,288,323
+Sources/JevClient/JevClient.swift
+  s_f619510890cb71::t_053673b158493f 53-59,61-62,92,98,139,145,161,167,183,189,199-214,223,244
+Sources/JevClient/Transport/HTTPExecutor.swift
+  s_f619510890cb71::t_053673b158493f 28-29,33-36,57-58,84-85,94-95,109-110,179-180,196,202
+Sources/JevClient/JevClient.docc/JevClient.md
+  s_f619510890cb71::t_fa63b532659495 7,22,24-82,96,111-112,124-125,131-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d43fd80fd1294892c2ec8441ad62763964218c8",
+  "prompts": {},
+  "sessions": {
+    "s_f619510890cb71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14012-ea32-7d93-bb0c-66c4e8c08be5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Vadim Shashin <git@enapiuz.com>"
+    }
+  }
+}
