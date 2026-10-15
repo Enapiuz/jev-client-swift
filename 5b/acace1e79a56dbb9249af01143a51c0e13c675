@@ -1,0 +1,19 @@
+README.md
+  s_f619510890cb71::t_46c017c1d68841 3,9,13,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bacace1e79a56dbb9249af01143a51c0e13c675",
+  "prompts": {},
+  "sessions": {
+    "s_f619510890cb71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14012-ea32-7d93-bb0c-66c4e8c08be5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Vadim Shashin <git@enapiuz.com>"
+    }
+  }
+}
