@@ -1,16 +1,16 @@
 # JevClient
 
-JevClient is a Swift package for TypeSafe AI's [System One API](https://docs.typesafe.ai/api). It sends evidence as a `state` value and named questions, then returns constrained Choice, Score, or Noul answers. It also supports experimental images and Box answers, and lists available models. The package has no third-party dependencies and imports no UI framework.
+JevClient is an unofficial Swift SDK for TypeSafe AI's [System One API](https://docs.typesafe.ai/api). It sends evidence as a `state` value and named questions, then returns constrained Choice, Score, or Noul answers. It also supports experimental images and Box answers, and lists available models. The package has no third-party dependencies and imports no UI framework.
 
 The package requires Swift 6.4 in Swift 6 language mode. Its declared minimums are macOS 12 and iOS 15. Linux uses `FoundationNetworking` where needed. CI is configured for macOS and Linux package tests and an iOS device build. JevClient does not implement streaming, chat, or automatic credential storage.
 
 ## Install
 
-In Xcode, use **File → Add Package Dependencies**, enter `https://github.com/Enapiuz/jev-client-swift`, select the `master` branch, and add the `JevClient` library product to your target. For another Swift package, add the repository and product dependency:
+In Xcode, use **File → Add Package Dependencies**, enter `https://github.com/Enapiuz/jev-client-swift`, select a version rule starting at **0.1.0**, and add the `JevClient` library product to your target. For another Swift package, add the repository and product dependency:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Enapiuz/jev-client-swift.git", branch: "master"),
+    .package(url: "https://github.com/Enapiuz/jev-client-swift.git", from: "0.1.0"),
 ],
 targets: [
     .target(
@@ -20,7 +20,7 @@ targets: [
 ]
 ```
 
-There is no versioned release tag yet, so use the `master` branch dependency until one is published. For a local clone, replace the dependency with `.package(path: "../jev-client-swift")` and keep the same product declaration. The repository's SwiftPM identity is `jev-client-swift`; the library product and Swift import remain `JevClient`.
+See the [0.1.0 release notes](https://github.com/Enapiuz/jev-client-swift/releases/tag/0.1.0) for the initial release's features and verification limits. For a local clone, replace the dependency with `.package(path: "../jev-client-swift")` and keep the same product declaration. The repository's SwiftPM identity is `jev-client-swift`; the library product and Swift import remain `JevClient`. The SDK version is independent of Jev's model version. The 0.x API may evolve; review release notes when updating.
 
 ## First request
 
